@@ -10,12 +10,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - name: Baixar repositorio
         uses: actions/checkout@v4
 
       - name: Descompactar o projeto
-        run: unzip -q FireHome.zip
+        run: |
+          rm -rf FireHome
+          unzip -q -o FireHome.zip
+          ls FireHome
 
       - name: Instalar Java 17
         uses: actions/setup-java@v4
@@ -32,13 +36,34 @@ jobs:
           gradle-version: "8.9"
 
       - name: Compilar o APK
+        id: build
         working-directory: FireHome
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --console=plain --stacktrace 2>&1 | tee ../build.log
+
+      - name: Mostrar os erros (se a compilacao falhou)
+        if: failure()
+        run: |
+          {
+            echo "## Erros da compilacao"
+            echo '```'
+            grep -E "^e: |error:|FAILED|What went wrong|Execution failed|Could not" build.log | head -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar o log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
 
       - name: Preparar arquivo
         run: cp FireHome/app/build/outputs/apk/release/app-release.apk FireHome.apk
 
-      - name: Guardar nos artefatos
+      - name: Guardar o APK nos artefatos
         uses: actions/upload-artifact@v4
         with:
           name: FireHome-apk
@@ -51,3 +76,4 @@ jobs:
           name: Fire Home APK
           files: FireHome.apk
           make_latest: true
+          
